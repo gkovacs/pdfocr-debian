@@ -1,3 +1,9 @@
+pdfocr (0.1.3-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Geza Kovacs <gkovacs@stanford.edu>  Tue, 20 Aug 2013 00:39:01 -0700
+
 pdfocr (0.1.1-1) unstable; urgency=low
 
   * Initial release
