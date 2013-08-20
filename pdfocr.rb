@@ -23,8 +23,16 @@
 require 'optparse'
 require 'tmpdir'
 
-def sh(c)
+def shell_escape(s)
+    "'" + s.gsub("'", "'\\''") + "'"
+end
+
+def sh(c, *args)
 	outl = []
+    if args.length > 0
+        c = shell_escape(c) + ' '
+        c << args.map {|w| shell_escape(w)}.join(' ')
+    end
 	IO.popen(c) { |f|
 		while not f.eof?
 			tval = f.gets
@@ -57,7 +65,7 @@ def rmdir(dirn)
 end
 
 appname = 'pdfocr'
-version = [0,1,1]
+version = [0,1,3]
 infile = nil
 outfile = nil
 deletedir = true
@@ -65,11 +73,13 @@ deletefiles = true
 language = 'eng'
 checklang = false
 tmp = nil
+usecuneiform = false
+usetesseract = false
 
 optparse = OptionParser.new { |opts|
 opts.banner = <<-eos
 Usage: #{appname} -i input.pdf -o output.pdf
-#{appname} adds text to PDF files using the cuneiform OCR software
+#{appname} adds text to PDF files using the ocropus, cuneiform, or tesseract OCR software
 eos
 
 	opts.on("-i", "--input [FILE]", "Specify input PDF file") { |fn|
@@ -80,7 +90,15 @@ eos
 		outfile = fn
 	}
 	
-	opts.on("-l", "--lang [LANG]", "Specify language for OCR with cuneiform") { |fn|
+	opts.on("-c", "--cuneiform", "Use cuneiform instead of ocropus") {
+		usecuneiform = true
+	}
+	
+	opts.on("-t", "--tesseract", "Use tesseract instead of ocropus") {
+		usetesseract = true
+	}
+	
+	opts.on("-l", "--lang [LANG]", "Specify language for the OCR software") { |fn|
 		language = fn
 		checklang = true
 	}
@@ -173,9 +191,23 @@ if `which pdftoppm` == ""
 	exit
 end
 
-if `which cuneiform` == ""
-	puts "cuneiform command is missing. Install the cuneiform package"
-	exit
+if usecuneiform
+	if `which cuneiform` == ""
+		puts "The cuneiform command is missing. Install the cuneiform package."
+		exit
+	end
+elsif usetesseract
+	if `which tesseract` == ""
+		puts "The tesseract command is missing. Install the tesseract-ocr package and the"
+                puts "language packages you need, e.g. tesseract-ocr-deu, tesseract-ocr-deu-frak,"
+                puts "or tesseract-ocr-eng."
+		exit
+	end
+else
+	if `which ocroscript` == ""
+		puts "The ocroscript command is missing. Install the ocropus package."
+		exit
+	end
 end
 
 if `which hocr2pdf` == ""
@@ -202,14 +234,24 @@ end
 
 if checklang
 	langlist = []
-	begin
-		langlist = `cuneiform -l`.split("\n")[-1].split(":")[-1].delete(".").split(" ")
-	rescue
-		puts "Unable to list supported languages from cuneiform"
+	if usecuneiform
+		begin
+			langlist = `cuneiform -l`.split("\n")[-1].split(":")[-1].delete(".").split(" ")
+		rescue
+			puts "Unable to list supported languages from cuneiform"
+		end
+	end
+	if usetesseract
+		begin
+			langlist = `tesseract --list-langs 2>&1`.split("\n")[1..-1]
+		rescue
+			puts "Unable to list supported languages from tesseract"
+		end
 	end
 	if langlist and not langlist.empty?()
 		if not langlist.include?(language)
-			puts "Language #{language} is not supported by cuneiform"
+			puts "Language #{language} is not supported or not installed. Please choose from"
+			puts langlist.join(' ')
 			exit
 		end
 	end
@@ -223,7 +265,7 @@ puts "Getting info from PDF file"
 
 puts
 
-pdfinfo = sh "pdftk #{infile} dump_data"
+pdfinfo = sh "pdftk", infile, "dump_data"
 
 if not pdfinfo or pdfinfo == ""
 	puts "Error: didn't get info from pdftk #{infile} dump_data"
@@ -233,7 +275,8 @@ end
 puts
 
 begin
-	pagenum = pdfinfo.split("\n")[-1].split(" ")[-1].to_i
+        pdfinfo =~ /NumberOfPages: (\d+)/
+	pagenum = $1.to_i
 rescue
 	puts "Error: didn't get page count for #{infile} from pdftk"
 	exit
@@ -256,25 +299,33 @@ Dir.chdir(tmp+"/") {
 	puts "=========="
 	puts "Extracting page #{i}"
 	basefn = i.to_s.rjust(numdigits, '0')
-	sh "pdftk #{infile} cat #{i} output #{basefn+'.pdf'}"
+	sh "pdftk", infile, "cat", "#{i}", "output", basefn+'.pdf'
 	if not File.file?(basefn+'.pdf')
 		puts "Error while extracting page #{i}"
 		next
 	end
 	puts "Converting page #{i} to ppm"
-	sh "pdftoppm #{basefn+'.pdf'} > #{basefn+'.ppm'}"
+
+	sh "pdftoppm -r 300 #{shell_escape(basefn)}.pdf >#{shell_escape(basefn)}.ppm"
 	if not File.file?(basefn+'.ppm')
 		puts "Error while converting page #{i} to ppm"
 		next
 	end
 	puts "Running OCR on page #{i}"
-	sh "cuneiform -l #{language} -f hocr -o #{basefn+'.hocr'} #{basefn+'.ppm'}"
+	if usecuneiform
+		sh "cuneiform", "-l", language, "-f", "hocr", "-o", basefn+'.hocr', basefn+'.ppm'
+	elsif usetesseract
+		sh "tesseract", "-l", language, basefn+'.ppm', basefn+'.hocr', "hocr"
+		sh "mv", basefn+'.hocr.html', basefn+'.hocr'
+	else
+		sh "ocroscript recognize #{shell_escape(basefn)}.ppm > #{shell_escape(basefn)}.hocr"
+	end
 	if not File.file?(basefn+'.hocr')
 		puts "Error while running OCR on page #{i}"
 		next
 	end
 	puts "Embedding text into PDF for page #{i}"
-	sh "hocr2pdf -i #{basefn+'.ppm'} -s -o #{basefn+'-new.pdf'} < #{basefn+'.hocr'}"
+	sh "hocr2pdf -r 300 -i #{shell_escape(basefn)}.ppm -s -o #{shell_escape(basefn)}-new.pdf < #{shell_escape(basefn)}.hocr"
 	if not File.file?(basefn+'-new.pdf')
 		puts "Error while embedding text into PDF for page #{i}"
 		next
@@ -289,7 +340,7 @@ sh "pdftk #{tmp+'/'+'*-new.pdf'} cat output #{tmp+'/merged.pdf'}"
 
 puts "Updating PDF info for #{outfile}"
 
-sh "pdftk #{tmp+'/merged.pdf'} update_info #{tmp+'/pdfinfo.txt'} output #{outfile}"
+sh "pdftk", tmp+'/merged.pdf', "update_info", tmp+'/pdfinfo.txt', "output", outfile
 
 if deletefiles
 	puts "Cleaning up temporary files"
