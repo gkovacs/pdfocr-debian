@@ -10,6 +10,6 @@ Homepage: http://github.com/gkovacs/pdfocr
 
 Package: pdfocr
 Architecture: all
-Depends: ${misc:Depends}, ruby (>= 1.8.7), cuneiform, pdftk, poppler-utils, exactimage
+Depends: ${misc:Depends}, ruby (>= 1.8.7), tesseract-ocr | cuneiform, pdftk, poppler-utils, exactimage
 Description: Adds OCR layer to scanned PDF files
  pdfocr uses optical charater recognition to extract text from scanned PDF files, and adds the recognized text back to the PDF file. This makes the resulting PDF files searchable.
