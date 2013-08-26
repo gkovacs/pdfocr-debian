@@ -3,7 +3,7 @@ Section: utils
 Priority: optional
 Maintainer: Geza Kovacs <gkovacs@mit.edu>
 Build-Depends: debhelper (>= 7)
-Standards-Version: 3.8.4
+Standards-Version: 3.9.4
 Vcs-Git: git://git.debian.org/git/collab-maint/pdfocr.git
 Vcs-Browser: http://git.debian.org/?p=collab-maint/pdfocr.git;a=summary
 Homepage: http://github.com/gkovacs/pdfocr
