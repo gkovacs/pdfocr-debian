@@ -86,7 +86,7 @@ eos
   opts.on("-i", "--input [FILE]", "Specify input PDF file") { |fn|
     infile = fn
   }
-  
+
   opts.on("-o", "--output [FILE]", "Specify output PDF file") { |fn|
     outfile = fn
   }
@@ -94,7 +94,7 @@ eos
   opts.on("-t", "--tesseract", "Use tesseract as the OCR engine (default)") {
     usetesseract = true
   }
-  
+
   opts.on("-c", "--cuneiform", "Use cuneiform as the OCR engine") {
     usecuneiform = true
   }
@@ -102,17 +102,22 @@ eos
   opts.on("-p", "--ocropus", "Use ocropus as the OCR engine") {
     useocropus = true
   }
-  
+
   opts.on("-l", "--lang [LANG]", "Specify language for the OCR software") { |fn|
     language = fn
     checklang = true
   }
-  
+
+  opts.on("-L", "--nocheck-lang LANG", "Suppress checking of language parameter") { |fn|
+    language = fn
+    checklang = false
+  }
+
   opts.on("-w", "--workingdir [DIR]", "Specify directory to store temp files in") { |fn|
     deletedir = false
     tmp = fn
   }
-  
+
   opts.on("-k", "--keep", "Keep temporary files around") {
     deletefiles = false
   }
@@ -138,7 +143,7 @@ if not infile or infile == ""
   exit
 end
 
-if infile[-3..-1] != "pdf"
+if infile[-3..-1].casecmp("pdf") != 0
   puts "Input PDF file #{infile} should have a PDF extension"
   exit
 end
@@ -164,7 +169,7 @@ if not outfile or outfile == ""
   exit
 end
 
-if outfile[-3..-1] != "pdf"
+if outfile[-3..-1].casecmp("pdf") != 0
   puts "Output PDF file should have a PDF extension"
   exit
 end
@@ -333,28 +338,36 @@ Dir.chdir(tmp+"/") {
   if usecuneiform
     sh "cuneiform", "-l", language, "-f", "hocr", "-o", basefn+'.hocr', basefn+'.ppm'
   elsif usetesseract
-    sh "tesseract", "-l", language, basefn+'.ppm', basefn+'.hocr', "hocr"
-    sh "mv", basefn+'.hocr.html', basefn+'.hocr'
+    sh "tesseract", "-l", language, basefn+'.ppm', basefn+'-new', "pdf"
+    if not File.file?(basefn+'-new.pdf')
+      puts "Error while running OCR on page #{i}"
+      sh "mv #{basefn+'.pdf'}  #{basefn+'-new.pdf'}"
+    end
+    puts "Merging ..."
+    sh "pdftk #{tmp+'/'+'*-new.pdf'} cat output #{tmp+'/merged.ocrpdf'}"
+    sh "rm -f #{tmp+'/'+'*-new.pdf'}"
+    sh "rm -f #{tmp+'/'+'*.ppm'}"
+    sh "rm -f #{tmp+'/'+'*.pdf'}"
+    sh "mv #{tmp+'/merged.ocrpdf'} #{tmp+'/0000000000000-merged-new.pdf'}"
   else
     sh "ocroscript recognize #{shell_escape(basefn)}.ppm > #{shell_escape(basefn)}.hocr"
   end
-  if not File.file?(basefn+'.hocr')
-    puts "Error while running OCR on page #{i}"
-    next
-  end
-  puts "Embedding text into PDF for page #{i}"
-  sh "hocr2pdf -r 300 -i #{shell_escape(basefn)}.ppm -s -o #{shell_escape(basefn)}-new.pdf < #{shell_escape(basefn)}.hocr"
-  if not File.file?(basefn+'-new.pdf')
-    puts "Error while embedding text into PDF for page #{i}"
-    next
-  end
+  if not usetesseract
+    if not File.file?(basefn+'-new.pdf')
+      puts "Error while running OCR on page #{i}"
+      next
+    end
+  end    
 }
 
 }
-
-puts "Merging together PDF files"
-
-sh "pdftk #{tmp+'/'+'*-new.pdf'} cat output #{tmp+'/merged.pdf'}"
+if usetesseract
+        puts "renaming merged-new.pdf to merged.pdf"
+        sh "mv #{tmp+'/0000000000000-merged-new.pdf'} #{tmp+'/merged.pdf'}"
+elsif
+        puts "Merging together PDF files"
+        sh "pdftk #{tmp+'/'+'*-new.pdf'} cat output #{tmp+'/merged.pdf'}"
+end
 
 puts "Updating PDF info for #{outfile}"
 
@@ -364,5 +377,3 @@ if deletefiles
   puts "Cleaning up temporary files"
   rmdir(tmp)
 end
-
-
