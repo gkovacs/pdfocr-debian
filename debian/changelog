@@ -1,3 +1,9 @@
+pdfocr (0.1.5-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Geza Kovacs <geza0kovacs@gmail.com>  Mon, 20 Jul 2015 02:32:38 -0700
+
 pdfocr (0.1.4-1) unstable; urgency=low
 
   * New upstream release.
